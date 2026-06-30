@@ -7,6 +7,9 @@ a standardized DataFrame ready for validation and database storage.
 
 from __future__ import annotations
 
+import time
+from datetime import datetime
+
 import pandas as pd
 import yfinance as yf
 
@@ -19,57 +22,39 @@ class MarketDownloader:
     """
 
     def __init__(self) -> None:
-        """Load asset configuration."""
+
         self.assets = load_config("assets.yaml")["assets"]
 
+    # ==========================================================
+    # Symbols
+    # ==========================================================
+
     def get_all_symbols(self) -> list[str]:
-        """
-        Return every configured ticker symbol.
 
-        Returns
-        -------
-        list[str]
-            List of all configured market symbols.
-        """
-
-        symbols: list[str] = []
+        symbols = []
 
         for category in self.assets.values():
+
             symbols.extend(category)
 
         return symbols
+
+    # ==========================================================
+    # Normalize
+    # ==========================================================
 
     def _normalize_dataframe(
         self,
         data: pd.DataFrame,
         symbol: str,
     ) -> pd.DataFrame:
-        """
-        Convert Yahoo Finance output into SENTINEL's
-        standard market data schema.
 
-        Parameters
-        ----------
-        data : pd.DataFrame
-            Raw dataframe returned by yfinance.
-
-        symbol : str
-            Market symbol.
-
-        Returns
-        -------
-        pd.DataFrame
-            Normalized dataframe.
-        """
-
-        # Flatten MultiIndex columns (newer yfinance versions)
         if isinstance(data.columns, pd.MultiIndex):
+
             data.columns = data.columns.get_level_values(0)
 
-        # Convert index to a column
         data = data.reset_index()
 
-        # Standardize column names
         data.rename(
             columns={
                 "Date": "trade_date",
@@ -83,33 +68,32 @@ class MarketDownloader:
             inplace=True,
         )
 
-        # Add symbol
         data["symbol"] = symbol
 
-        # Keep only required columns
-        columns = [
-            "trade_date",
-            "symbol",
-            "open",
-            "high",
-            "low",
-            "close",
-            "adjusted_close",
-            "volume",
+        data = data[
+            [
+                "trade_date",
+                "symbol",
+                "open",
+                "high",
+                "low",
+                "close",
+                "adjusted_close",
+                "volume",
+            ]
         ]
 
-        data = data[columns]
-
-        # Sort by trade date
         data.sort_values("trade_date", inplace=True)
 
-        # Reset index
         data.reset_index(drop=True, inplace=True)
 
-        # Remove pandas column index name (e.g. "Price")
         data.columns.name = None
 
         return data
+
+    # ==========================================================
+    # Download
+    # ==========================================================
 
     def download(
         self,
@@ -117,58 +101,83 @@ class MarketDownloader:
         start: str = "2000-01-01",
         interval: str = "1d",
     ) -> pd.DataFrame:
-        """
-        Download historical market data.
 
-        Parameters
-        ----------
-        symbol : str
-            Market symbol.
+        end = datetime.today().strftime("%Y-%m-%d")
 
-        start : str
-            Start date.
+        last_exception = None
 
-        interval : str
-            Data interval.
+        for attempt in range(1, 4):
 
-        Returns
-        -------
-        pd.DataFrame
-            Standardized market data.
-        """
+            try:
 
-        data = yf.download(
-            tickers=symbol,
-            start=start,
-            interval=interval,
-            auto_adjust=False,
-            progress=False,
-        )
+                print(f"Downloading {symbol} (Attempt {attempt}/3)...")
 
-        if data.empty:
-            raise ValueError(f"No data returned for {symbol}")
+                data = yf.download(
+                    tickers=symbol,
+                    start=start,
+                    end=end,
+                    interval=interval,
+                    auto_adjust=False,
+                    progress=False,
+                    threads=False,
+                )
 
-        return self._normalize_dataframe(data, symbol)
+                if data.empty:
 
+                    raise ValueError(
+                        f"No data returned for {symbol}"
+                    )
+
+                return self._normalize_dataframe(
+                    data,
+                    symbol,
+                )
+
+            except Exception as e:
+
+                last_exception = e
+
+                print(f"Attempt {attempt} failed.")
+
+                if attempt < 3:
+
+                    print("Retrying in 3 seconds...\n")
+
+                    time.sleep(3)
+
+        raise RuntimeError(
+            f"Failed to download {symbol} after 3 attempts."
+        ) from last_exception
+
+
+# ==========================================================
+# Test
+# ==========================================================
 
 if __name__ == "__main__":
 
     downloader = MarketDownloader()
 
-    print("Configured Assets:")
+    print("=" * 60)
+    print("SENTINEL MARKET DOWNLOADER")
+    print("=" * 60)
+
+    print("\nConfigured Assets:")
+
     print(downloader.get_all_symbols())
 
     print("\nDownloading SPY...\n")
 
-    spy = downloader.download("SPY")
+    df = downloader.download("SPY")
 
-    print(spy.head())
+    print(df.head())
+
+    print("\nRows:", len(df))
 
     print("\nColumns:")
-    print(spy.columns.tolist())
+
+    print(df.columns.tolist())
 
     print("\nData Types:")
-    print(spy.dtypes)
 
-    print("\nShape:")
-    print(spy.shape)
+    print(df.dtypes)

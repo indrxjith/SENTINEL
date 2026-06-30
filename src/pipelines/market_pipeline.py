@@ -22,6 +22,10 @@ class MarketPipeline:
         self.validator = DataValidator()
         self.repository = MarketRepository()
 
+    # ==========================================================
+    # Run Pipeline
+    # ==========================================================
+
     def run(self):
 
         start = time.time()
@@ -38,34 +42,93 @@ class MarketPipeline:
 
         for symbol in symbols:
 
-            print(f"\nDownloading {symbol}...")
+            print(f"\nProcessing {symbol}...")
 
             try:
 
+                # --------------------------------------------------
+                # Download latest data
+                # --------------------------------------------------
+
                 df = self.downloader.download(symbol)
+
+                # --------------------------------------------------
+                # Validate
+                # --------------------------------------------------
 
                 report = self.validator.validate(df)
 
-                if report.is_valid:
-
-                    inserted = self.repository.insert(df)
-
-                    rows_inserted += inserted
-                    assets_processed += 1
-
-                    print(f"✓ {inserted:,} rows inserted.")
-
-                else:
-
-                    assets_failed += 1
+                if not report.is_valid:
 
                     print(report.summary())
+
+                    # If there are errors OTHER than OHLC,
+                    # skip this symbol.
+                    non_ohlc_errors = [
+                        error
+                        for error in report.errors
+                        if "OHLC" not in error
+                    ]
+
+                    if non_ohlc_errors:
+
+                        assets_failed += 1
+
+                        print(
+                            "\nSkipping because of critical validation errors."
+                        )
+
+                        continue
+
+                    # ----------------------------------------------
+                    # Remove invalid OHLC rows only
+                    # ----------------------------------------------
+
+                    before = len(df)
+
+                    df = df[
+                        (df["high"] >= df["low"])
+                        & (df["high"] >= df["open"])
+                        & (df["high"] >= df["close"])
+                        & (df["low"] <= df["open"])
+                        & (df["low"] <= df["close"])
+                    ].copy()
+
+                    removed = before - len(df)
+
+                    print(
+                        f"\nRemoved {removed} invalid OHLC row(s)."
+                    )
+
+                    print(
+                        f"Continuing with {len(df):,} valid rows..."
+                    )
+
+                # --------------------------------------------------
+                # Refresh database
+                # --------------------------------------------------
+
+                deleted = self.repository.delete_symbol(symbol)
+
+                if deleted > 0:
+
+                    print(
+                        f"Deleted {deleted:,} existing rows"
+                    )
+
+                inserted = self.repository.insert(df)
+
+                rows_inserted += inserted
+                assets_processed += 1
+
+                print(f"✓ {inserted:,} rows inserted")
 
             except Exception as e:
 
                 assets_failed += 1
 
                 print(f"✗ {symbol} failed")
+
                 print(e)
 
         elapsed = time.time() - start
@@ -74,11 +137,15 @@ class MarketPipeline:
         print("PIPELINE SUMMARY")
         print("=" * 60)
 
-        print(f"Assets processed : {assets_processed}")
-        print(f"Assets failed    : {assets_failed}")
-        print(f"Rows inserted    : {rows_inserted:,}")
-        print(f"Elapsed time     : {elapsed:.2f} seconds")
+        print(f"Assets Processed : {assets_processed}")
+        print(f"Assets Failed    : {assets_failed}")
+        print(f"Rows Inserted    : {rows_inserted:,}")
+        print(f"Execution Time   : {elapsed:.2f} sec")
 
+
+# ==========================================================
+# Test
+# ==========================================================
 
 if __name__ == "__main__":
 

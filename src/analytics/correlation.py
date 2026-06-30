@@ -1,8 +1,10 @@
 """
-Correlation Engine for SENTINEL.
+Rolling Correlation Engine for SENTINEL.
 """
 
 from __future__ import annotations
+
+import itertools
 
 import pandas as pd
 
@@ -11,7 +13,7 @@ from src.repository.feature_repository import FeatureRepository
 
 class CorrelationEngine:
     """
-    Computes correlation statistics from engineered features.
+    Computes rolling correlations between all assets.
     """
 
     def __init__(self):
@@ -27,19 +29,13 @@ class CorrelationEngine:
         return self.repository.fetch_all()
 
     # ==========================================================
-    # Return Matrix
+    # Build Return Matrix
     # ==========================================================
 
     def build_return_matrix(
         self,
         df: pd.DataFrame,
     ) -> pd.DataFrame:
-        """
-        Creates a pivot table:
-            rows    -> trade_date
-            columns -> symbol
-            values  -> simple_return
-        """
 
         matrix = df.pivot_table(
             index="trade_date",
@@ -47,27 +43,47 @@ class CorrelationEngine:
             values="simple_return",
         )
 
-        return matrix.sort_index()
+        matrix = matrix.sort_index()
+
+        return matrix
 
     # ==========================================================
-    # Static Correlation
+    # Asset Pairs
     # ==========================================================
 
-    def correlation_matrix(
-        self,
+    @staticmethod
+    def asset_pairs(
         matrix: pd.DataFrame,
-    ) -> pd.DataFrame:
+    ):
 
-        return matrix.corr()
+        return list(
+            itertools.combinations(
+                matrix.columns,
+                2,
+            )
+        )
 
     # ==========================================================
-    # Test
+    # Rolling Correlation
     # ==========================================================
 
-    def run(self):
+    @staticmethod
+    def rolling_corr(
+        series1: pd.Series,
+        series2: pd.Series,
+        window: int,
+    ) -> pd.Series:
+
+        return series1.rolling(window).corr(series2)
+
+    # ==========================================================
+    # Calculate
+    # ==========================================================
+
+    def calculate(self) -> pd.DataFrame:
 
         print("=" * 60)
-        print("SENTINEL CORRELATION ENGINE")
+        print("SENTINEL ROLLING CORRELATION ENGINE")
         print("=" * 60)
 
         print("\nLoading engineered features...")
@@ -80,19 +96,107 @@ class CorrelationEngine:
 
         matrix = self.build_return_matrix(df)
 
-        print(f"✓ Shape: {matrix.shape}")
+        print(f"✓ Matrix Shape : {matrix.shape}")
 
-        print("\nCalculating correlation matrix...")
+        print("\nGenerating asset pairs...")
 
-        corr = self.correlation_matrix(matrix)
+        pairs = self.asset_pairs(matrix)
 
-        print("\nCorrelation Matrix\n")
+        print(f"✓ {len(pairs)} pairs")
 
-        print(corr.round(3))
+        print("\nCalculating rolling correlations...")
 
-        return corr
+        rows = []
 
+        for asset_1, asset_2 in pairs:
+
+            corr20 = self.rolling_corr(
+                matrix[asset_1],
+                matrix[asset_2],
+                20,
+            )
+
+            corr60 = self.rolling_corr(
+                matrix[asset_1],
+                matrix[asset_2],
+                60,
+            )
+
+            corr252 = self.rolling_corr(
+                matrix[asset_1],
+                matrix[asset_2],
+                252,
+            )
+
+            temp = pd.DataFrame(
+                {
+                    "trade_date": matrix.index,
+                    "asset_1": asset_1,
+                    "asset_2": asset_2,
+                    "rolling_corr_20": corr20.values,
+                    "rolling_corr_60": corr60.values,
+                    "rolling_corr_252": corr252.values,
+                }
+            )
+
+            rows.append(temp)
+
+        correlations = pd.concat(
+            rows,
+            ignore_index=True,
+        )
+
+        print(
+            f"✓ Generated {len(correlations):,} raw rows"
+        )
+
+        print("\nRemoving incomplete windows...")
+
+        correlations = correlations.dropna(
+            subset=[
+                "rolling_corr_20",
+                "rolling_corr_60",
+                "rolling_corr_252",
+            ]
+        )
+
+        correlations = correlations.sort_values(
+            [
+                "trade_date",
+                "asset_1",
+                "asset_2",
+            ]
+        ).reset_index(drop=True)
+
+        print(
+            f"✓ Final rows: {len(correlations):,}"
+        )
+
+        return correlations
+
+
+# ==========================================================
+# Test
+# ==========================================================
 
 if __name__ == "__main__":
 
-    CorrelationEngine().run()
+    engine = CorrelationEngine()
+
+    correlations = engine.calculate()
+
+    print()
+
+    print("=" * 60)
+    print("LAST 10 ROWS")
+    print("=" * 60)
+
+    print(correlations.tail(10))
+
+    print()
+
+    print("=" * 60)
+    print("SUMMARY")
+    print("=" * 60)
+
+    print(correlations.describe())

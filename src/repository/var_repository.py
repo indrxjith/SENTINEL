@@ -1,5 +1,5 @@
 """
-Repository for engineered market features.
+Repository for Value at Risk (VaR).
 """
 
 from __future__ import annotations
@@ -10,12 +10,12 @@ from sqlalchemy import text
 from src.utils.database import engine
 
 
-class FeatureRepository:
+class VarRepository:
     """
-    Repository for the market_features table.
+    Repository for asset_var table.
     """
 
-    TABLE_NAME = "market_features"
+    TABLE_NAME = "asset_var"
     SCHEMA = "sentinel"
 
     # ==========================================================
@@ -26,84 +26,27 @@ class FeatureRepository:
         self,
         data: pd.DataFrame,
     ) -> int:
-        """
-        Insert engineered features into PostgreSQL.
-        """
 
         df = data.copy()
 
-        # Remove auto-generated columns
         df = df.drop(
-            columns=[
-                "id",
-                "created_at",
-            ],
+            columns=["id", "created_at"],
             errors="ignore",
         )
 
-        # Remove raw market columns
-        df = df.drop(
-            columns=[
-                "open",
-                "high",
-                "low",
-                "close",
-                "adjusted_close",
-                "volume",
-            ],
-            errors="ignore",
+        df.to_sql(
+            self.TABLE_NAME,
+            engine,
+            schema=self.SCHEMA,
+            if_exists="append",
+            index=False,
+            method="multi",
         )
 
-        print("\n======================================")
-        print("INSERTING FEATURES")
-        print("======================================")
-
-        print(f"Rows    : {len(df):,}")
-        print(f"Columns : {len(df.columns)}")
-
-        try:
-
-            df.to_sql(
-                name=self.TABLE_NAME,
-                con=engine,
-                schema=self.SCHEMA,
-                if_exists="append",
-                index=False,
-                method="multi",
-            )
-
-            print(f"\n✓ Successfully inserted {len(df):,} rows.")
-
-            return len(df)
-
-        except Exception as e:
-
-            print("\n======================================")
-            print("DATABASE INSERT FAILED")
-            print("======================================")
-
-            print("\nException Type:")
-            print(type(e).__name__)
-
-            print("\nException:")
-            print(e)
-
-            print("\nColumns:")
-            print(df.columns.tolist())
-
-            print("\nDuplicate Columns:")
-            print(df.columns[df.columns.duplicated()].tolist())
-
-            print("\nData Types:")
-            print(df.dtypes)
-
-            print("\nFirst Row:")
-            print(df.head(1).T)
-
-            raise
+        return len(df)
 
     # ==========================================================
-    # Fetch One Symbol
+    # Fetch Symbol
     # ==========================================================
 
     def fetch_symbol(
@@ -114,7 +57,7 @@ class FeatureRepository:
         query = text(
             """
             SELECT *
-            FROM sentinel.market_features
+            FROM sentinel.asset_var
             WHERE symbol=:symbol
             ORDER BY trade_date
             """
@@ -135,7 +78,7 @@ class FeatureRepository:
         query = text(
             """
             SELECT *
-            FROM sentinel.market_features
+            FROM sentinel.asset_var
             ORDER BY symbol, trade_date
             """
         )
@@ -157,7 +100,7 @@ class FeatureRepository:
         query = text(
             """
             DELETE
-            FROM sentinel.market_features
+            FROM sentinel.asset_var
             WHERE symbol=:symbol
             """
         )
@@ -178,7 +121,7 @@ class FeatureRepository:
         query = text(
             """
             SELECT COUNT(*)
-            FROM sentinel.market_features
+            FROM sentinel.asset_var
             """
         )
 
@@ -193,10 +136,10 @@ class FeatureRepository:
 
 if __name__ == "__main__":
 
-    repository = FeatureRepository()
+    repository = VarRepository()
 
     print("=" * 50)
-    print("FEATURE REPOSITORY TEST")
+    print("VAR REPOSITORY TEST")
     print("=" * 50)
 
-    print(f"Rows in market_features: {repository.row_count():,}")
+    print(f"Rows: {repository.row_count():,}")

@@ -142,23 +142,18 @@ class DataValidator:
         data: pd.DataFrame,
         report: ValidationReport,
     ) -> None:
-        """Validate column data types."""
 
-        # trade_date
         if not pd.api.types.is_datetime64_any_dtype(data["trade_date"]):
             report.add_error("trade_date must be datetime.")
 
-        # symbol
         if not pd.api.types.is_string_dtype(data["symbol"]):
             report.add_error("symbol column must contain strings.")
 
-        # prices
         for column in self.PRICE_COLUMNS:
 
             if not pd.api.types.is_numeric_dtype(data[column]):
                 report.add_error(f"{column} must be numeric.")
 
-        # volume
         if not pd.api.types.is_integer_dtype(data["volume"]):
             report.add_warning(
                 "volume column is not stored as an integer."
@@ -241,19 +236,44 @@ class DataValidator:
         data: pd.DataFrame,
         report: ValidationReport,
     ) -> None:
+        """
+        Validate OHLC relationships.
+        """
 
-        invalid = (
+        invalid_rows = data[
             (data["high"] < data["low"])
             | (data["high"] < data["open"])
             | (data["high"] < data["close"])
             | (data["low"] > data["open"])
             | (data["low"] > data["close"])
-        ).sum()
+        ]
 
-        if invalid:
+        if not invalid_rows.empty:
+
             report.add_error(
-                f"{invalid} rows violate OHLC rules."
+                f"{len(invalid_rows)} rows violate OHLC rules."
             )
+
+            print("\n" + "=" * 60)
+            print("INVALID OHLC ROWS")
+            print("=" * 60)
+
+            print(
+                invalid_rows[
+                    [
+                        "trade_date",
+                        "symbol",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "adjusted_close",
+                        "volume",
+                    ]
+                ].to_string(index=False)
+            )
+
+            print("=" * 60)
 
     # -----------------------------------------------------
 
