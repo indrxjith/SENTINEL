@@ -1,0 +1,20 @@
+assets:
+  equities:
+    - SPY
+    - QQQ
+
+  volatility:
+    - ^VIX
+
+  commodities:
+    - GLD
+    - USO
+
+  crypto:
+    - BTC-USD
+
+  currency:
+    - DX-Y.NYB
+
+  rates:
+    - ^TNX
