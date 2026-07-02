@@ -1,26 +1,8 @@
 """
 data_loader.py
-===============
-THE ONLY module in this dashboard allowed to know that a backend exists.
 
-Every page and component calls functions from this module — never a
-repository, analytics function, or database session directly. This file
-is intentionally the single seam between:
-
-    PostgreSQL -> Repository Layer -> [ data_loader.py ] -> Streamlit UI
-
-How to wire this up
---------------------
-Each function below defines the CONTRACT the rest of the dashboard is
-built against (exact return type + shape, documented in its docstring).
-The body currently raises NotImplementedError with a one-line pointer to
-what needs to be plugged in — no synthetic data, no placeholder charts,
-nothing invented. Replace the `raise` with a call into your real
-repository / analytics / validation modules, keeping the return
-contract intact, and the entire dashboard lights up unchanged.
-
-If a repository method you need doesn't exist yet, that's a signal to
-extend the Repository layer — not to fake it here.
+Single bridge between the Streamlit dashboard and PostgreSQL.
+Every dashboard page should ONLY import from this file.
 """
 
 from __future__ import annotations
@@ -30,48 +12,70 @@ from typing import Literal
 
 import pandas as pd
 import streamlit as st
+from sqlalchemy import text
+
+from src.utils.database import engine
+
+from src.repository.market_repository import MarketRepository
+from src.repository.var_repository import VarRepository
+from src.repository.expected_shortfall_repository import (
+    ExpectedShortfallRepository,
+)
+from src.repository.beta_repository import BetaRepository
+from src.repository.correlation_repository import CorrelationRepository
+from src.repository.feature_repository import FeatureRepository
+from src.repository.regime_repository import RegimeRepository
+from src.repository.risk_score_repository import RiskScoreRepository
 
 
-# ---------------------------------------------------------------------------
-# Connection / status
-# ---------------------------------------------------------------------------
+# ==========================================================
+# DATABASE
+# ==========================================================
+
 def database_is_connected() -> bool:
-    """
-    Returns True if a live DB session/engine can be established.
-
-    Wire to: your session factory (e.g. src/repository/db.py or similar),
-    typically `engine.connect()` inside a try/except, or a lightweight
-    `SELECT 1`.
-    """
-    raise NotImplementedError(
-        "database_is_connected(): wire to your SQLAlchemy engine/session factory."
-    )
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False
 
 
-# ---------------------------------------------------------------------------
-# Price history
-# ---------------------------------------------------------------------------
+# ==========================================================
+# PRICE HISTORY
+# ==========================================================
+
 @st.cache_data(ttl=300, show_spinner=False)
-def get_price_history(symbol: str, start: dt.date, end: dt.date) -> pd.DataFrame:
-    """
-    Returns OHLCV price history for `symbol` between start/end (inclusive).
+def get_price_history(
+    symbol: str,
+    start: dt.date,
+    end: dt.date,
+) -> pd.DataFrame:
 
-    Return contract:
-        DataFrame indexed by `date` (DatetimeIndex), columns:
-            open, high, low, close, volume   (all float64, volume may be int64)
+    repo = MarketRepository()
 
-    Wire to: src/repository/<market_data_repository>.get_price_series(...)
-    or equivalent — the repository method that reads OHLCV rows from
-    PostgreSQL for a single symbol.
-    """
-    raise NotImplementedError(
-        "get_price_history(): wire to your Repository layer's price-history read."
-    )
+    df = repo.fetch_symbol(symbol)
+
+    if df.empty:
+        return df
+
+    df["trade_date"] = pd.to_datetime(df["trade_date"])
+
+    df = df[
+        (df.trade_date >= pd.Timestamp(start))
+        &
+        (df.trade_date <= pd.Timestamp(end))
+    ]
+
+    df = df.set_index("trade_date")
+
+    return df
 
 
-# ---------------------------------------------------------------------------
-# Risk metrics
-# ---------------------------------------------------------------------------
+# ==========================================================
+# VALUE AT RISK
+# ==========================================================
+
 @st.cache_data(ttl=300, show_spinner=False)
 def get_var(
     symbol: str,
@@ -80,194 +84,471 @@ def get_var(
     end: dt.date,
     confidence: float = 0.95,
 ) -> pd.DataFrame:
-    """
-    Returns the VaR time series already computed by src/analytics.
 
-    Return contract:
-        DataFrame indexed by `date`, columns:
-            var            (float64, positive number = loss magnitude)
-            price          (float64, close price that day, for overlay)
-            breach         (bool, True if actual loss exceeded VaR that day)
+    price_repo = MarketRepository()
+    var_repo = VarRepository()
 
-    Wire to: src/analytics.<var_module>.historical_var(...) /
-    parametric_var(...) via the Repository/Analytics service layer —
-    the dashboard must NOT recompute VaR itself, only read the
-    already-computed series.
-    """
-    raise NotImplementedError(
-        f"get_var(method={method!r}): wire to src/analytics VaR output via the repository."
+    prices = price_repo.fetch_symbol(symbol)
+    var = var_repo.fetch_symbol(symbol)
+
+    if prices.empty or var.empty:
+        return pd.DataFrame()
+
+    prices["trade_date"] = pd.to_datetime(prices["trade_date"])
+    var["trade_date"] = pd.to_datetime(var["trade_date"])
+
+    if method == "historical":
+        column = (
+            "historical_var_95"
+            if confidence <= 0.95
+            else "historical_var_99"
+        )
+    else:
+        column = (
+            "parametric_var_95"
+            if confidence <= 0.95
+            else "parametric_var_99"
+        )
+
+    df = prices.merge(
+        var[
+            [
+                "trade_date",
+                column,
+            ]
+        ],
+        on="trade_date",
     )
 
+    df = df[
+        (df.trade_date >= pd.Timestamp(start))
+        &
+        (df.trade_date <= pd.Timestamp(end))
+    ]
+
+    df["var"] = df[column].abs()
+
+    returns = df["close"].pct_change()
+
+    df["breach"] = (
+        returns <
+        (-df["var"] / 100)
+    )
+
+    df = df.set_index("trade_date")
+
+    return df[
+        [
+            "var",
+            "close",
+            "breach",
+        ]
+    ].rename(
+        columns={
+            "close": "price",
+        }
+    )
+
+
+# ==========================================================
+# EXPECTED SHORTFALL
+# ==========================================================
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_expected_shortfall(
-    symbol: str, start: dt.date, end: dt.date, confidence: float = 0.975
+    symbol: str,
+    start: dt.date,
+    end: dt.date,
+    confidence: float = 0.975,
 ) -> pd.DataFrame:
-    """
-    Return contract:
-        DataFrame indexed by `date`, columns:
-            expected_shortfall   (float64)
-            price                (float64)
 
-    Wire to: src/analytics's Expected Shortfall output.
-    """
-    raise NotImplementedError(
-        "get_expected_shortfall(): wire to src/analytics Expected Shortfall output."
+    price_repo = MarketRepository()
+    es_repo = ExpectedShortfallRepository()
+
+    prices = price_repo.fetch_symbol(symbol)
+    es = es_repo.fetch_symbol(symbol)
+
+    if prices.empty or es.empty:
+        return pd.DataFrame()
+
+    prices["trade_date"] = pd.to_datetime(prices["trade_date"])
+    es["trade_date"] = pd.to_datetime(es["trade_date"])
+
+    column = (
+        "expected_shortfall_95"
+        if confidence <= 0.95
+        else "expected_shortfall_99"
+    )
+
+    df = prices.merge(
+        es[
+            [
+                "trade_date",
+                column,
+            ]
+        ],
+        on="trade_date",
+    )
+
+    df = df[
+        (df.trade_date >= pd.Timestamp(start))
+        &
+        (df.trade_date <= pd.Timestamp(end))
+    ]
+
+    df = df.set_index("trade_date")
+
+    return df[
+        [
+            column,
+            "close",
+        ]
+    ].rename(
+        columns={
+            column: "expected_shortfall",
+            "close": "price",
+        }
     )
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def get_rolling_volatility(symbol: str, start: dt.date, end: dt.date, window: int = 21) -> pd.Series:
-    """
-    Return contract:
-        Series indexed by `date`, name='volatility' (float64, annualized or
-        raw per your analytics module's convention — label accordingly in UI).
-
-    Wire to: src/analytics's rolling volatility function.
-    """
-    raise NotImplementedError("get_rolling_volatility(): wire to src/analytics rolling volatility output.")
-
+# ==========================================================
+# ROLLING VOLATILITY
+# ==========================================================
 
 @st.cache_data(ttl=300, show_spinner=False)
-def get_correlation_matrix(symbols: list[str], start: dt.date, end: dt.date) -> pd.DataFrame:
-    """
-    Return contract:
-        Square DataFrame, index and columns both = symbols, values = float64
-        correlation coefficients in [-1, 1].
+def get_rolling_volatility(
+    symbol: str,
+    start: dt.date,
+    end: dt.date,
+    window: int = 20,
+) -> pd.Series:
 
-    Wire to: src/analytics's correlation output (already computed, not
-    pandas .corr() run fresh here).
-    """
-    raise NotImplementedError("get_correlation_matrix(): wire to src/analytics correlation output.")
+    repo = FeatureRepository()
 
+    df = repo.fetch_symbol(symbol)
 
-@st.cache_data(ttl=300, show_spinner=False)
-def get_rolling_correlation(symbol_a: str, symbol_b: str, start: dt.date, end: dt.date, window: int = 63) -> pd.Series:
-    """
-    Return contract:
-        Series indexed by `date`, name='correlation' (float64 in [-1, 1]).
+    if df.empty:
+        return pd.Series(dtype=float)
 
-    Wire to: src/analytics's rolling correlation output.
-    """
-    raise NotImplementedError("get_rolling_correlation(): wire to src/analytics rolling correlation output.")
+    df["trade_date"] = pd.to_datetime(df["trade_date"])
 
+    df = df[
+        (df.trade_date >= pd.Timestamp(start))
+        &
+        (df.trade_date <= pd.Timestamp(end))
+    ]
 
-@st.cache_data(ttl=300, show_spinner=False)
-def get_beta(symbol: str, benchmark: str, start: dt.date, end: dt.date) -> float:
-    """
-    Return contract: single float64 beta value.
+    if window <= 20:
+        column = "annualized_volatility_20d"
+    elif window <= 60:
+        column = "annualized_volatility_60d"
+    else:
+        column = "annualized_volatility_252d"
 
-    Wire to: src/analytics's beta output.
-    """
-    raise NotImplementedError("get_beta(): wire to src/analytics beta output.")
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def get_risk_score(symbol: str, as_of: dt.date) -> dict:
-    """
-    Return contract:
-        {
-            "score": float,          # composite risk score, backend-defined scale
-            "label": str,            # e.g. "Elevated", "Normal", "Severe"
-            "components": dict,      # optional breakdown, backend-defined keys
-        }
-
-    Wire to: src/analytics's composite risk score output.
-    """
-    raise NotImplementedError("get_risk_score(): wire to src/analytics composite risk score output.")
+    return pd.Series(
+        df[column].values,
+        index=df["trade_date"],
+        name="volatility",
+    )
 
 
-# ---------------------------------------------------------------------------
-# Market regime
-# ---------------------------------------------------------------------------
-@st.cache_data(ttl=300, show_spinner=False)
-def get_market_regime(symbol: str, start: dt.date, end: dt.date) -> pd.DataFrame:
-    """
-    Return contract:
-        DataFrame indexed by `date`, columns:
-            regime   (str/category: e.g. "Bull", "Bear", "High Volatility", "Low Volatility")
-
-    Wire to: src/analytics's regime detection output.
-    """
-    raise NotImplementedError("get_market_regime(): wire to src/analytics regime detection output.")
-
-
-# ---------------------------------------------------------------------------
-# Model validation
-# ---------------------------------------------------------------------------
-@st.cache_data(ttl=300, show_spinner=False)
-def get_validation_summary(symbol: str, method: Literal["historical", "parametric"], as_of: dt.date) -> dict:
-    """
-    Return contract:
-        {
-            "kupiec":               {"statistic": float, "p_value": float, "result": "PASS" | "FAIL"},
-            "christoffersen":       {"statistic": float, "p_value": float, "result": "PASS" | "FAIL"},
-            "conditional_coverage": {"statistic": float, "p_value": float, "result": "PASS" | "FAIL"},
-        }
-
-    Wire to: src/validation's Kupiec / Christoffersen / Conditional
-    Coverage test outputs.
-    """
-    raise NotImplementedError("get_validation_summary(): wire to src/validation test outputs.")
-
+# ==========================================================
+# BETA
+# ==========================================================
 
 @st.cache_data(ttl=300, show_spinner=False)
-def get_basel_traffic_light(symbol: str, method: Literal["historical", "parametric"], start: dt.date, end: dt.date) -> pd.DataFrame:
-    """
-    Return contract:
-        DataFrame indexed by `date`, columns:
-            zone              (str: "GREEN" | "YELLOW" | "RED")
-            breach_count      (int, rolling breach count in the window)
-            risk_multiplier   (float64, Basel scaling factor for that window)
+def get_beta(
+    symbol: str,
+    benchmark: str = "SPY",
+) -> float:
 
-    Wire to: src/validation's rolling Basel traffic-light output.
-    """
-    raise NotImplementedError("get_basel_traffic_light(): wire to src/validation Basel traffic-light output.")
+    repo = BetaRepository()
+
+    df = repo.fetch_symbol(symbol)
+
+    if df.empty:
+        return 0.0
+
+    df = df[df["benchmark"] == benchmark]
+
+    if df.empty:
+        return 0.0
+
+    return float(df.iloc[-1]["beta_252"])
 
 
-# ---------------------------------------------------------------------------
-# Recent events (Overview page "Recent Risk Events" panel)
-# ---------------------------------------------------------------------------
+# ==========================================================
+# RISK SCORE
+# ==========================================================
+
 @st.cache_data(ttl=300, show_spinner=False)
-def get_recent_risk_events(symbol: str, limit: int = 10) -> pd.DataFrame:
-    """
-    Return contract:
-        DataFrame, most recent first, columns:
-            date         (datetime64)
-            event_type   (str, e.g. "VaR Breach", "Regime Change", "Validation Failure")
-            description  (str)
-            severity     (str: "low" | "medium" | "high")
+def get_risk_score(
+    symbol: str,
+    as_of: dt.date,
+) -> dict:
 
-    Wire to: whichever repository/table logs breach + validation events.
-    If none exists yet, this is the repository method that needs adding.
-    """
-    raise NotImplementedError("get_recent_risk_events(): wire to your risk-events repository/table.")
+    repo = RiskScoreRepository()
 
+    df = repo.fetch_symbol(symbol)
 
-# ---------------------------------------------------------------------------
-# Database Explorer (raw repository browsing)
-# ---------------------------------------------------------------------------
+    if df.empty:
+        return {}
+
+    df["trade_date"] = pd.to_datetime(df["trade_date"])
+
+    df = df[
+        df.trade_date <= pd.Timestamp(as_of)
+    ]
+
+    if df.empty:
+        return {}
+
+    latest = df.iloc[-1]
+
+    return {
+        "score": float(latest["total_score"]),
+        "label": latest["risk_level"],
+        "components": {
+            "volatility": float(latest["volatility_score"]),
+            "drawdown": float(latest["drawdown_score"]),
+            "beta": float(latest["beta_score"]),
+            "var": float(latest["var_score"]),
+            "expected_shortfall": float(
+                latest["expected_shortfall_score"]
+            ),
+        },
+    }
+
+# ==========================================================
+# CORRELATION MATRIX
+# ==========================================================
+
 @st.cache_data(ttl=300, show_spinner=False)
-def get_market_data_table(
-    symbols: list[str], start: dt.date, end: dt.date
+def get_correlation_matrix(
+    symbols: list[str],
+    start: dt.date,
+    end: dt.date,
 ) -> pd.DataFrame:
-    """
-    Returns raw, un-aggregated rows for browsing in the Database Explorer
-    page — search/sort/filter/pagination/export all operate on exactly
-    what this returns, nothing computed on top of it.
 
-    Return contract:
-        Flat DataFrame (not indexed by date — date is a regular column so
-        the explorer's generic table/filter component can treat it like
-        any other field), columns:
-            date     (datetime64)
-            symbol   (str)
-            open, high, low, close   (float64)
-            volume   (int64)
+    repo = CorrelationRepository()
 
-    Wire to: src/repository's raw multi-symbol OHLCV read (e.g. a
-    `get_price_rows(symbols, start, end)` method) — this should be a
-    straight SELECT, not a call into analytics.
-    """
-    raise NotImplementedError("get_market_data_table(): wire to your Repository layer's raw multi-symbol read.")
+    df = repo.fetch_all()
 
+    if df.empty:
+        return pd.DataFrame()
+
+    df["trade_date"] = pd.to_datetime(df["trade_date"])
+
+    df = df[
+        (df.trade_date >= pd.Timestamp(start))
+        &
+        (df.trade_date <= pd.Timestamp(end))
+    ]
+
+    latest_date = df["trade_date"].max()
+
+    df = df[df["trade_date"] == latest_date]
+
+    matrix = pd.DataFrame(
+        index=symbols,
+        columns=symbols,
+        dtype=float,
+    )
+
+    for s in symbols:
+        matrix.loc[s, s] = 1.0
+
+    for _, row in df.iterrows():
+
+        a = row["asset_1"]
+        b = row["asset_2"]
+
+        if a not in matrix.index or b not in matrix.columns:
+            continue
+
+        value = row["rolling_corr_60"]
+
+        matrix.loc[a, b] = value
+        matrix.loc[b, a] = value
+
+    return matrix.fillna(0.0)
+
+
+# ==========================================================
+# ROLLING CORRELATION
+# ==========================================================
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_rolling_correlation(
+    symbol_a: str,
+    symbol_b: str,
+    start: dt.date,
+    end: dt.date,
+    window: int = 60,
+) -> pd.Series:
+
+    repo = CorrelationRepository()
+
+    df = repo.fetch_all()
+
+    if df.empty:
+        return pd.Series(dtype=float)
+
+    df["trade_date"] = pd.to_datetime(df["trade_date"])
+
+    df = df[
+        (
+            ((df.asset_1 == symbol_a) & (df.asset_2 == symbol_b))
+            |
+            ((df.asset_1 == symbol_b) & (df.asset_2 == symbol_a))
+        )
+    ]
+
+    df = df[
+        (df.trade_date >= pd.Timestamp(start))
+        &
+        (df.trade_date <= pd.Timestamp(end))
+    ]
+
+    if window <= 20:
+        column = "rolling_corr_20"
+    elif window <= 60:
+        column = "rolling_corr_60"
+    else:
+        column = "rolling_corr_252"
+
+    return pd.Series(
+        df[column].values,
+        index=df["trade_date"],
+        name="correlation",
+    )
+
+
+# ==========================================================
+# MARKET REGIME
+# ==========================================================
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_market_regime(
+    symbol: str,
+    start: dt.date,
+    end: dt.date,
+) -> pd.DataFrame:
+
+    repo = RegimeRepository()
+
+    df = repo.fetch_symbol(symbol)
+
+    if df.empty:
+        return pd.DataFrame()
+
+    df["trade_date"] = pd.to_datetime(df["trade_date"])
+
+    df = df[
+        (df.trade_date >= pd.Timestamp(start))
+        &
+        (df.trade_date <= pd.Timestamp(end))
+    ]
+    df = df.rename(
+    columns={
+        "risk_regime": "regime"
+    }
+)
+
+    df = df.set_index("trade_date")
+
+    return df
+
+
+# ==========================================================
+# MODEL VALIDATION
+# ==========================================================
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_validation_summary(
+    symbol: str,
+    method: str,
+    end_date: dt.date,
+):
+
+    var_df = get_var(
+        symbol=symbol,
+        method=method.lower(),
+        start=dt.date(2000, 1, 1),
+        end=end_date,
+    )
+
+    if var_df.empty:
+
+        return {
+            "observations": 0,
+            "breaches": 0,
+            "breach_rate": 0.0,
+            "expected_rate": 0.05,
+        }
+
+    breaches = int(var_df["breach"].sum())
+
+    observations = len(var_df)
+
+    return {
+        "observations": observations,
+        "breaches": breaches,
+        "breach_rate": breaches / observations if observations else 0,
+        "expected_rate": 0.05,
+    }
+
+
+# ==========================================================
+# BASEL TRAFFIC LIGHT
+# ==========================================================
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_basel_traffic_light(
+    symbol: str,
+    method: str,
+    end_date: dt.date,
+):
+
+    summary = get_validation_summary(
+        symbol,
+        method,
+        end_date,
+    )
+
+    breaches = summary["breaches"]
+
+    if breaches <= 4:
+        zone = "Green"
+    elif breaches <= 9:
+        zone = "Yellow"
+    else:
+        zone = "Red"
+
+    return {
+        "zone": zone,
+        "breaches": breaches,
+    }
+
+
+# ==========================================================
+# RECENT RISK EVENTS
+# ==========================================================
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_recent_risk_events(
+    symbol: str,
+):
+
+    risk = RiskScoreRepository().fetch_symbol(symbol)
+
+    if risk.empty:
+        return pd.DataFrame()
+
+    risk["trade_date"] = pd.to_datetime(risk["trade_date"])
+
+    return (
+        risk.sort_values("trade_date", ascending=False)
+            .head(25)
+            .reset_index(drop=True)
+    )

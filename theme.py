@@ -89,17 +89,16 @@ def _read_css() -> str:
 
 
 def apply_theme() -> None:
-    """Inject fonts + stylesheet and strip Streamlit's default branding.
-    Call once per page, immediately after st.set_page_config()."""
     register_plotly_template()
 
-    st.markdown(
+    css = _read_css()
+
+    st.html(
         f"""
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link href="{GOOGLE_FONTS_URL}" rel="stylesheet">
-        <style>
-        {_read_css()}
-        </style>
-        """,
-        unsafe_allow_html=True,
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="{GOOGLE_FONTS_URL}" rel="stylesheet">
+<style>
+{css}
+</style>
+"""
     )
