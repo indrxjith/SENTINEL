@@ -277,6 +277,39 @@ class DataValidator:
 
     # -----------------------------------------------------
 
+    def identify_bad_rows(self, data: pd.DataFrame) -> pd.Series:
+        """
+        Return a boolean mask flagging individual rows that are
+        the source of missing-value, non-positive-price, negative
+        volume, or OHLC-consistency errors.
+
+        This lets a caller drop exactly the offending rows
+        (e.g. a single incomplete trailing bar) instead of
+        discarding the entire dataset because of one bad row.
+
+        Structural problems (missing columns, empty frame,
+        duplicate rows, wrong dtypes) are NOT represented here
+        since they can't be fixed by dropping individual rows.
+        """
+
+        missing_mask = data[self.PRICE_COLUMNS + ["volume"]].isna().any(axis=1)
+
+        price_mask = (data[self.PRICE_COLUMNS] <= 0).any(axis=1)
+
+        volume_mask = data["volume"] < 0
+
+        ohlc_mask = (
+            (data["high"] < data["low"])
+            | (data["high"] < data["open"])
+            | (data["high"] < data["close"])
+            | (data["low"] > data["open"])
+            | (data["low"] > data["close"])
+        )
+
+        return missing_mask | price_mask | volume_mask | ohlc_mask
+
+    # -----------------------------------------------------
+
     def _check_dates(
         self,
         data: pd.DataFrame,

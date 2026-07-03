@@ -62,47 +62,63 @@ class MarketPipeline:
 
                     print(report.summary())
 
-                    # If there are errors OTHER than OHLC,
-                    # skip this symbol.
-                    non_ohlc_errors = [
-                        error
-                        for error in report.errors
-                        if "OHLC" not in error
-                    ]
-
-                    if non_ohlc_errors:
-
-                        assets_failed += 1
-
-                        print(
-                            "\nSkipping because of critical validation errors."
-                        )
-
-                        continue
-
                     # ----------------------------------------------
-                    # Remove invalid OHLC rows only
+                    # Try to salvage the load by dropping exactly
+                    # the offending rows (e.g. an incomplete
+                    # trailing bar with a NaN close), then
+                    # re-validating what's left. Structural
+                    # problems (missing columns, empty frame,
+                    # duplicate rows, bad dtypes) can't be fixed
+                    # this way and will still fail re-validation.
                     # ----------------------------------------------
 
                     before = len(df)
 
-                    df = df[
-                        (df["high"] >= df["low"])
-                        & (df["high"] >= df["open"])
-                        & (df["high"] >= df["close"])
-                        & (df["low"] <= df["open"])
-                        & (df["low"] <= df["close"])
-                    ].copy()
+                    bad_row_mask = self.validator.identify_bad_rows(df)
+                    removed = int(bad_row_mask.sum())
 
-                    removed = before - len(df)
+                    if removed:
+
+                        print(f"\nDropping {removed} bad row(s):")
+                        print(
+                            df.loc[
+                                bad_row_mask,
+                                [
+                                    "trade_date",
+                                    "symbol",
+                                    "open",
+                                    "high",
+                                    "low",
+                                    "close",
+                                    "adjusted_close",
+                                    "volume",
+                                ],
+                            ].to_string(index=False)
+                        )
+
+                    df = df.loc[~bad_row_mask].copy()
+
+                    retry_report = self.validator.validate(df)
+
+                    if not retry_report.is_valid:
+
+                        print("\n" + retry_report.summary())
+
+                        assets_failed += 1
+
+                        print(
+                            "\nSkipping because of critical validation "
+                            "errors that could not be resolved by "
+                            "dropping individual rows."
+                        )
+
+                        continue
 
                     print(
-                        f"\nRemoved {removed} invalid OHLC row(s)."
+                        f"\nRemoved {removed} invalid row(s) "
+                        f"({before:,} -> {len(df):,})."
                     )
-
-                    print(
-                        f"Continuing with {len(df):,} valid rows..."
-                    )
+                    print(f"Continuing with {len(df):,} valid rows...")
 
                 # --------------------------------------------------
                 # Refresh database
