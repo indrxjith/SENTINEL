@@ -19,20 +19,22 @@ from typing import Final
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Colors:
-    """Institutional dark-mode palette. Do not add colors outside this set —
-    the whole point of a terminal-grade UI is a disciplined, narrow palette."""
+    """Bloomberg-terminal-inspired palette: true black, burnt-orange
+    accent, high-contrast white data text. Do not add colors outside
+    this set — the whole point of a terminal-grade UI is a disciplined,
+    narrow palette."""
 
-    background: str = "#090909"
-    surface: str = "#111111"          # card background
-    border: str = "#202020"           # card border / hairline rules
-    text_primary: str = "#F5F5F5"
-    text_secondary: str = "#A0A0A0"
+    background: str = "#000000"
+    surface: str = "#0A0A0A"          # card background
+    border: str = "#2A2A2A"           # card border / hairline rules
+    text_primary: str = "#FFFFFF"
+    text_secondary: str = "#8C8C8C"
 
-    blue: str = "#2E86FF"     # primary accent / price series
-    green: str = "#00C853"    # positive / PASS / bull
-    red: str = "#FF4D4D"      # negative / FAIL / breach
-    amber: str = "#FFB300"    # caution / YELLOW traffic light
-    purple: str = "#7C4DFF"   # secondary series / regime markers
+    blue: str = "#FF9500"     # primary accent / price series (Bloomberg orange)
+    green: str = "#00D964"    # positive / PASS / bull
+    red: str = "#FF3B30"      # negative / FAIL / breach
+    amber: str = "#FFD600"    # caution / YELLOW traffic light
+    purple: str = "#29B6F6"   # secondary series / regime markers (cyan, for contrast against orange)
 
     @property
     def risk_scale(self) -> list[str]:
@@ -48,8 +50,10 @@ COLORS: Final = Colors()
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Fonts:
-    body: str = "'IBM Plex Sans', -apple-system, sans-serif"
-    heading: str = "'IBM Plex Sans', -apple-system, sans-serif"
+    # Bloomberg's terminal sets headers and labels in monospace too, not
+    # just numeric data -- everything here shares one dense mono family.
+    body: str = "'JetBrains Mono', 'IBM Plex Mono', 'Courier New', monospace"
+    heading: str = "'JetBrains Mono', 'IBM Plex Mono', 'Courier New', monospace"
     mono: str = "'JetBrains Mono', 'IBM Plex Mono', 'Courier New', monospace"
 
 
@@ -57,9 +61,8 @@ FONTS: Final = Fonts()
 
 GOOGLE_FONTS_URL: Final = (
     "https://fonts.googleapis.com/css2?"
-    "family=IBM+Plex+Sans:wght@400;500;600;700&"
-    "family=IBM+Plex+Mono:wght@400;500;600&"
-    "family=JetBrains+Mono:wght@400;500;600&display=swap"
+    "family=IBM+Plex+Mono:wght@400;500;600;700&"
+    "family=JetBrains+Mono:wght@400;500;600;700&display=swap"
 )
 
 
