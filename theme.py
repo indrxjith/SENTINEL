@@ -38,7 +38,7 @@ def _build_plotly_template() -> go.layout.Template:
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family=FONTS.mono, color=COLORS.text_secondary, size=12),
         title=dict(font=dict(family=FONTS.body, color=COLORS.text_primary, size=14)),
-        colorway=[COLORS.blue, COLORS.purple, COLORS.amber, COLORS.green, COLORS.red],
+        colorway=[COLORS.accent, COLORS.cyan, COLORS.amber, COLORS.green, COLORS.red],
         xaxis=dict(
             gridcolor=COLORS.border,
             gridwidth=1,

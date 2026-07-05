@@ -26,7 +26,7 @@ def build_risk_score_gauge(score: float, scale_max: float = 100.0, label: str = 
             number=dict(font=dict(family=FONTS.mono, color=COLORS.text_primary, size=28)),
             gauge=dict(
                 axis=dict(range=[0, scale_max], tickfont=dict(family=FONTS.mono, color=COLORS.text_secondary, size=10)),
-                bar=dict(color=COLORS.blue, thickness=0.25),
+                bar=dict(color=COLORS.accent, thickness=0.25),
                 bgcolor="rgba(0,0,0,0)",
                 borderwidth=1,
                 bordercolor=COLORS.border,

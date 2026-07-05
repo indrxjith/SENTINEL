@@ -110,27 +110,38 @@ class CorrelationEngine:
 
         for asset_1, asset_2 in pairs:
 
+            # Align this pair on the dates BOTH assets actually traded.
+            # The shared `matrix` index is a union across all symbols, so
+            # it includes days only some assets trade on (e.g. BTC-USD
+            # trades every calendar day while equities/indices only trade
+            # ~5 days/week). Rolling on the raw shared matrix means every
+            # window -- for every pair, not just BTC ones -- eventually
+            # contains a day where one side is NaN, and pandas requires a
+            # full window by default, silently producing NaN forever.
+            # Dropping to the pairwise-complete dates first fixes this.
+            pair_df = matrix[[asset_1, asset_2]].dropna()
+
             corr20 = self.rolling_corr(
-                matrix[asset_1],
-                matrix[asset_2],
+                pair_df[asset_1],
+                pair_df[asset_2],
                 20,
             )
 
             corr60 = self.rolling_corr(
-                matrix[asset_1],
-                matrix[asset_2],
+                pair_df[asset_1],
+                pair_df[asset_2],
                 60,
             )
 
             corr252 = self.rolling_corr(
-                matrix[asset_1],
-                matrix[asset_2],
+                pair_df[asset_1],
+                pair_df[asset_2],
                 252,
             )
 
             temp = pd.DataFrame(
                 {
-                    "trade_date": matrix.index,
+                    "trade_date": pair_df.index,
                     "asset_1": asset_1,
                     "asset_2": asset_2,
                     "rolling_corr_20": corr20.values,

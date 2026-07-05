@@ -67,7 +67,7 @@ with es_col:
     if es_err:
         not_wired_notice(es_err)
     else:
-        fig = build_rolling_line_chart(es_df["expected_shortfall"], name="Expected Shortfall", color=COLORS.purple)
+        fig = build_rolling_line_chart(es_df["expected_shortfall"], name="Expected Shortfall", color=COLORS.cyan)
         st.plotly_chart(fig, use_container_width=True)
 
 # ---------------------------------------------------------------------------
@@ -80,7 +80,7 @@ with vol_col:
     if vol_err:
         not_wired_notice(vol_err)
     else:
-        fig = build_rolling_line_chart(vol_series, name="Volatility", color=COLORS.blue)
+        fig = build_rolling_line_chart(vol_series, name="Volatility", color=COLORS.accent)
         st.plotly_chart(fig, use_container_width=True)
 
 with dist_col:

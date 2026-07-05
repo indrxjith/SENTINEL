@@ -43,7 +43,7 @@ import pandas as pd
 import streamlit as st
 from sqlalchemy import text
 
-from config import VAR_CONFIDENCE
+from config import ASSET_SYMBOL_MAP, DISPLAY_SYMBOL_MAP, VAR_CONFIDENCE
 from src.analytics.model_validation import ModelValidation
 from src.repository.beta_repository import BetaRepository
 from src.repository.correlation_repository import CorrelationRepository
@@ -78,6 +78,19 @@ def database_is_connected() -> bool:
 # ==========================================================
 # Internal helpers
 # ==========================================================
+
+def _raw_symbol(symbol: str) -> str:
+    """UI display symbol (e.g. 'BTC') -> the raw ticker string every
+    repository actually stores (e.g. 'BTC-USD'). No-op for symbols that
+    are already identical in both forms (SPY, QQQ, GLD, USO)."""
+    return ASSET_SYMBOL_MAP.get(symbol, symbol)
+
+
+def _display_symbol(symbol: str) -> str:
+    """Raw ticker string from a repository row (e.g. '^VIX') -> the UI's
+    clean display symbol (e.g. 'VIX'). No-op for anything not in the map."""
+    return DISPLAY_SYMBOL_MAP.get(symbol, symbol)
+
 
 def _filter_date_range(df: pd.DataFrame, date_col: str, start: dt.date, end: dt.date) -> pd.DataFrame:
     return df[(df[date_col] >= pd.Timestamp(start)) & (df[date_col] <= pd.Timestamp(end))]
@@ -115,8 +128,9 @@ def _load_var_breach_series(
     Returns a DataFrame indexed by trade_date with columns:
         simple_return, var_value (the raw, signed VaR figure), breach
     """
-    features = FeatureRepository().fetch_symbol(symbol)
-    var = VarRepository().fetch_symbol(symbol)
+    raw = _raw_symbol(symbol)
+    features = FeatureRepository().fetch_symbol(raw)
+    var = VarRepository().fetch_symbol(raw)
 
     if features.empty or var.empty:
         raise NotImplementedError(
@@ -158,7 +172,7 @@ def get_price_history(
     end: dt.date,
 ) -> pd.DataFrame:
 
-    df = MarketRepository().fetch_symbol(symbol)
+    df = MarketRepository().fetch_symbol(_raw_symbol(symbol))
 
     if df.empty:
         raise NotImplementedError(
@@ -185,8 +199,9 @@ def get_var(
     confidence: float = VAR_CONFIDENCE,
 ) -> pd.DataFrame:
 
-    prices = MarketRepository().fetch_symbol(symbol)
-    var = VarRepository().fetch_symbol(symbol)
+    raw = _raw_symbol(symbol)
+    prices = MarketRepository().fetch_symbol(raw)
+    var = VarRepository().fetch_symbol(raw)
 
     if prices.empty or var.empty:
         raise NotImplementedError(
@@ -234,8 +249,9 @@ def get_expected_shortfall(
     confidence: float = 0.975,
 ) -> pd.DataFrame:
 
-    prices = MarketRepository().fetch_symbol(symbol)
-    es = ExpectedShortfallRepository().fetch_symbol(symbol)
+    raw = _raw_symbol(symbol)
+    prices = MarketRepository().fetch_symbol(raw)
+    es = ExpectedShortfallRepository().fetch_symbol(raw)
 
     if prices.empty or es.empty:
         raise NotImplementedError(
@@ -279,7 +295,7 @@ def get_rolling_volatility(
     window: int = 20,
 ) -> pd.Series:
 
-    df = FeatureRepository().fetch_symbol(symbol)
+    df = FeatureRepository().fetch_symbol(_raw_symbol(symbol))
 
     if df.empty:
         raise NotImplementedError(
@@ -315,7 +331,7 @@ def get_beta(
     benchmark: str = "SPY",
 ) -> float:
 
-    df = BetaRepository().fetch_symbol(symbol)
+    df = BetaRepository().fetch_symbol(_raw_symbol(symbol))
 
     if df.empty:
         raise NotImplementedError(
@@ -323,7 +339,7 @@ def get_beta(
             f"run the beta pipeline for this symbol."
         )
 
-    df = df[df["benchmark"] == benchmark]
+    df = df[df["benchmark"] == _raw_symbol(benchmark)]
     if df.empty:
         raise NotImplementedError(
             f"No beta data for {symbol!r} against benchmark "
@@ -343,7 +359,7 @@ def get_risk_score(
     as_of: dt.date,
 ) -> dict:
 
-    df = RiskScoreRepository().fetch_symbol(symbol)
+    df = RiskScoreRepository().fetch_symbol(_raw_symbol(symbol))
 
     if df.empty:
         raise NotImplementedError(
@@ -411,7 +427,7 @@ def get_correlation_matrix(
         matrix.loc[s, s] = 1.0
 
     for _, row in df.iterrows():
-        a, b = row["asset_1"], row["asset_2"]
+        a, b = _display_symbol(row["asset_1"]), _display_symbol(row["asset_2"])
         if a not in matrix.index or b not in matrix.columns:
             continue
         value = row["rolling_corr_60"]
@@ -442,10 +458,11 @@ def get_rolling_correlation(
             "pipeline."
         )
 
+    raw_a, raw_b = _raw_symbol(symbol_a), _raw_symbol(symbol_b)
     df["trade_date"] = pd.to_datetime(df["trade_date"])
     df = df[
-        ((df.asset_1 == symbol_a) & (df.asset_2 == symbol_b))
-        | ((df.asset_1 == symbol_b) & (df.asset_2 == symbol_a))
+        ((df.asset_1 == raw_a) & (df.asset_2 == raw_b))
+        | ((df.asset_1 == raw_b) & (df.asset_2 == raw_a))
     ]
     df = _filter_date_range(df, "trade_date", start, end)
     df = df.sort_values("trade_date")
@@ -480,7 +497,7 @@ def get_market_regime(
     end: dt.date,
 ) -> pd.DataFrame:
 
-    df = RegimeRepository().fetch_symbol(symbol)
+    df = RegimeRepository().fetch_symbol(_raw_symbol(symbol))
 
     if df.empty:
         raise NotImplementedError(
@@ -620,7 +637,7 @@ def get_recent_risk_events(
     from the risk score pipeline. If a real event log table is added
     later, replace this with a straight fetch_symbol() call.
     """
-    risk = RiskScoreRepository().fetch_symbol(symbol)
+    risk = RiskScoreRepository().fetch_symbol(_raw_symbol(symbol))
     if risk.empty:
         raise NotImplementedError(
             f"No risk score data available for {symbol!r} yet -- "
@@ -690,7 +707,7 @@ def get_market_data_table(
     paginate/export it directly.
     """
     repo = MarketRepository()
-    frames = [repo.fetch_symbol(s) for s in symbols]
+    frames = [repo.fetch_symbol(_raw_symbol(s)) for s in symbols]
     frames = [f for f in frames if not f.empty]
 
     if not frames:
@@ -702,6 +719,9 @@ def get_market_data_table(
     df = pd.concat(frames, ignore_index=True)
     df["trade_date"] = pd.to_datetime(df["trade_date"])
     df = _filter_date_range(df, "trade_date", start_date, end_date)
+    # Show the same clean symbol the analyst picked in the multiselect,
+    # not the raw Yahoo Finance ticker stored in the DB.
+    df["symbol"] = df["symbol"].map(_display_symbol)
     df = df.sort_values(["symbol", "trade_date"]).reset_index(drop=True)
 
     return df

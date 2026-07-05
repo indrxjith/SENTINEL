@@ -30,11 +30,11 @@ class Colors:
     text_primary: str = "#FFFFFF"
     text_secondary: str = "#8C8C8C"
 
-    blue: str = "#FF9500"     # primary accent / price series (Bloomberg orange)
+    accent: str = "#FF9500"   # primary accent / price series (Bloomberg orange)
     green: str = "#00D964"    # positive / PASS / bull
     red: str = "#FF3B30"      # negative / FAIL / breach
     amber: str = "#FFD600"    # caution / YELLOW traffic light
-    purple: str = "#29B6F6"   # secondary series / regime markers (cyan, for contrast against orange)
+    cyan: str = "#29B6F6"     # secondary series / regime markers (contrast against orange)
 
     @property
     def risk_scale(self) -> list[str]:
@@ -70,6 +70,32 @@ GOOGLE_FONTS_URL: Final = (
 # Asset universe / defaults
 # ---------------------------------------------------------------------------
 ASSET_UNIVERSE: Final[list[str]] = ["SPY", "QQQ", "BTC", "GLD", "USO", "VIX", "TNX", "DXY"]
+
+# The dashboard shows clean display symbols (above), but every ingestion
+# pipeline (see configs/assets.yaml + src/ingestion/market_downloader.py)
+# downloads and stores data under Yahoo Finance's raw ticker strings --
+# "BTC-USD", "^VIX", "^TNX", "DX-Y.NYB" -- since every repository does an
+# exact-match `WHERE symbol = :symbol` lookup. Without this map, selecting
+# BTC/VIX/TNX/DXY in the UI queries for a symbol that is never in the
+# database and every page for those four assets falls back to a
+# "Backend Not Wired" notice even though the pipelines ran fine.
+# data_loader.py is the only place that should read this map -- pages
+# and components only ever see the clean display symbols.
+ASSET_SYMBOL_MAP: Final[dict[str, str]] = {
+    "SPY": "SPY",
+    "QQQ": "QQQ",
+    "GLD": "GLD",
+    "USO": "USO",
+    "BTC": "BTC-USD",
+    "VIX": "^VIX",
+    "TNX": "^TNX",
+    "DXY": "DX-Y.NYB",
+}
+
+# Reverse lookup (raw ticker -> display symbol), used wherever a
+# repository hands back rows keyed by its own raw `symbol`/`asset_1`/
+# `asset_2` columns (e.g. the correlation matrix, the Database Explorer).
+DISPLAY_SYMBOL_MAP: Final[dict[str, str]] = {raw: display for display, raw in ASSET_SYMBOL_MAP.items()}
 
 MODEL_OPTIONS: Final[list[str]] = ["Historical", "Parametric", "Expected Shortfall"]
 

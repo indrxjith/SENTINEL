@@ -41,7 +41,7 @@ def build_price_risk_chart(
             y=price_df["close"],
             name="Price",
             mode="lines",
-            line=dict(color=COLORS.blue, width=1.5),
+            line=dict(color=COLORS.accent, width=1.5),
             yaxis="y1",
             hovertemplate="%{y:.2f}<extra>Price</extra>",
         )
@@ -83,7 +83,7 @@ def build_price_risk_chart(
                 y=es_df["expected_shortfall"],
                 name="Expected Shortfall",
                 mode="lines",
-                line=dict(color=COLORS.purple, width=1, dash="dash"),
+                line=dict(color=COLORS.cyan, width=1, dash="dash"),
                 yaxis="y2",
                 hovertemplate="%{y:.2f}<extra>ES</extra>",
             )
@@ -99,7 +99,7 @@ def build_price_risk_chart(
     return fig
 
 
-def build_sparkline(series: pd.Series, color: str = COLORS.blue) -> go.Figure:
+def build_sparkline(series: pd.Series, color: str = COLORS.accent) -> go.Figure:
     """Minimal no-axis sparkline for compact card contexts."""
     fig = go.Figure(
         go.Scatter(x=series.index, y=series.values, mode="lines", line=dict(color=color, width=1.5))
@@ -115,7 +115,7 @@ def build_sparkline(series: pd.Series, color: str = COLORS.blue) -> go.Figure:
 
 
 def build_rolling_line_chart(
-    series: pd.Series, name: str, color: str = COLORS.blue, y_title: str | None = None
+    series: pd.Series, name: str, color: str = COLORS.accent, y_title: str | None = None
 ) -> go.Figure:
     """Generic single-line time series chart — used for rolling VaR,
     rolling ES, rolling volatility, and rolling correlation, all of
@@ -141,7 +141,7 @@ def build_distribution_histogram(returns: pd.Series, bins: int = 60) -> go.Figur
         go.Histogram(
             x=returns.values,
             nbinsx=bins,
-            marker=dict(color=COLORS.blue, line=dict(color=COLORS.border, width=0.5)),
+            marker=dict(color=COLORS.accent, line=dict(color=COLORS.border, width=0.5)),
             hovertemplate="Return: %{x:.4f}<br>Count: %{y}<extra></extra>",
         )
     )
@@ -183,7 +183,7 @@ def build_correlation_heatmap(corr_matrix: pd.DataFrame) -> go.Figure:
             y=corr_matrix.index.tolist(),
             zmin=-1,
             zmax=1,
-            colorscale=[[0, COLORS.red], [0.5, COLORS.surface], [1, COLORS.blue]],
+            colorscale=[[0, COLORS.red], [0.5, COLORS.surface], [1, COLORS.accent]],
             colorbar=dict(
                 thickness=12,
                 outlinewidth=0,
@@ -211,12 +211,12 @@ def build_regime_timeline(segments: pd.DataFrame) -> go.Figure:
         "Bull": COLORS.green,
         "Bear": COLORS.red,
         "High Volatility": COLORS.amber,
-        "Low Volatility": COLORS.blue,
+        "Low Volatility": COLORS.accent,
     }
 
     fig = go.Figure()
     for _, row in segments.iterrows():
-        color = regime_colors.get(row["regime"], COLORS.purple)
+        color = regime_colors.get(row["regime"], COLORS.cyan)
         fig.add_trace(
             go.Scatter(
                 x=[row["start_date"], row["end_date"]],

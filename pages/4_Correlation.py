@@ -87,6 +87,6 @@ else:
         not_wired_notice(rolling_err)
     else:
         fig = build_rolling_line_chart(
-            rolling_corr, name=f"{symbol_a} / {symbol_b}", color=COLORS.purple, y_title="Correlation"
+            rolling_corr, name=f"{symbol_a} / {symbol_b}", color=COLORS.cyan, y_title="Correlation"
         )
         st.plotly_chart(fig, use_container_width=True)
