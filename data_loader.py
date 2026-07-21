@@ -39,6 +39,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Literal
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 from sqlalchemy import text
@@ -61,6 +62,16 @@ from src.utils.database import engine
 _BASEL_CONFIDENCE_SUFFIX = "99"
 _BASEL_WINDOW = 250
 
+# --- DEMO MODE FOR STREAMLIT CLOUD ---
+# Checks DB on startup. If it fails (like on Streamlit Cloud), 
+# it switches to Demo Mode to show dummy charts instead of errors.
+try:
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+    DEMO_MODE = False
+except Exception:
+    DEMO_MODE = True
+# -------------------------------------
 
 # ==========================================================
 # DATABASE
@@ -100,7 +111,7 @@ def _nearest_window_column(window: int, prefix: str, available: tuple = (20, 60,
     """
     Picks the precomputed rolling-window column closest to the
     requested window. The backend only ever materializes a fixed set
-    of windows (20/60/252 day), while the UI slider is continuous --
+    of windows (20/60/252 day), while the UI slider is continuous -- 
     this maps any slider value to the nearest one actually available,
     rather than a brittle tiered if/elif that silently mishandles
     values between the tiers.
@@ -171,7 +182,12 @@ def get_price_history(
     start: dt.date,
     end: dt.date,
 ) -> pd.DataFrame:
-
+    # --- DEMO FALLBACK ---
+    if DEMO_MODE:
+        dates = pd.date_range(end=dt.date.today(), periods=100, freq='B')
+        return pd.DataFrame({"close": np.cumsum(np.random.randn(100)) + 150}, index=dates)
+    # ---------------------
+    
     df = MarketRepository().fetch_symbol(_raw_symbol(symbol))
 
     if df.empty:
@@ -198,7 +214,14 @@ def get_var(
     end: dt.date,
     confidence: float = VAR_CONFIDENCE,
 ) -> pd.DataFrame:
-
+    # --- DEMO FALLBACK ---
+    if DEMO_MODE:
+        dates = pd.date_range(end=dt.date.today(), periods=100, freq='B')
+        prices = np.cumsum(np.random.randn(100)) + 150
+        var_vals = prices * -0.02  # Dummy 2% VaR
+        return pd.DataFrame({"var": var_vals, "price": prices, "breach": np.random.rand(100) > 0.95}, index=dates)
+    # ---------------------
+    
     raw = _raw_symbol(symbol)
     prices = MarketRepository().fetch_symbol(raw)
     var = VarRepository().fetch_symbol(raw)
@@ -525,10 +548,19 @@ def get_validation_summary(
 ) -> dict:
     """
     Runs Kupiec / Christoffersen / Conditional Coverage over the full
-    hit sequence up to end_date (not just the sidebar's date range --
+    hit sequence up to end_date (not just the sidebar's date range -- 
     a model validation backtest wants as much history as exists, not
     a truncated window the analyst happens to be charting).
     """
+    # --- DEMO FALLBACK ---
+    if DEMO_MODE:
+        return {
+            "kupiec": {"result": "PASS", "statistic": 0.45, "p_value": 0.50},
+            "christoffersen": {"result": "PASS", "statistic": 1.12, "p_value": 0.29},
+            "conditional_coverage": {"result": "PASS", "statistic": 1.57, "p_value": 0.45}
+        }
+    # ---------------------
+    
     hit_df = _load_var_breach_series(symbol, method, "95")
     hit_df = hit_df[hit_df.index <= pd.Timestamp(end_date)]
 
