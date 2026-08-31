@@ -1,5 +1,5 @@
 database:
-  host: localhost
+  host: ep-winter-heart-a5mlqaxj-pooler.us-east-2.aws.neon.tech
   port: 5432
-  name: sentinel
-  user: postgres
+  name: neondb
+  user: neondb_owner

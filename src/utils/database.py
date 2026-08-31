@@ -17,16 +17,7 @@ from sqlalchemy.engine import URL
 from src.utils.config import load_config
 
 
-# ---------------------------------------------------------------------
-# Load Environment Variables
-# ---------------------------------------------------------------------
-
 load_dotenv()
-
-
-# ---------------------------------------------------------------------
-# Load Database Configuration
-# ---------------------------------------------------------------------
 
 db_config = load_config("database.yaml")["database"]
 
@@ -41,11 +32,6 @@ if password is None:
         "DB_PASSWORD was not found. Please check your .env file."
     )
 
-
-# ---------------------------------------------------------------------
-# Build Database URL
-# ---------------------------------------------------------------------
-
 DATABASE_URL = URL.create(
     drivername="postgresql+psycopg2",
     username=user,
@@ -53,22 +39,14 @@ DATABASE_URL = URL.create(
     host=host,
     port=port,
     database=database,
+    query={"sslmode": "require", "channel_binding": "require"},
 )
-
-
-# ---------------------------------------------------------------------
-# Create SQLAlchemy Engine
-# ---------------------------------------------------------------------
 
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
 )
 
-
-# ---------------------------------------------------------------------
-# Test Connection
-# ---------------------------------------------------------------------
 
 def test_connection():
     """
@@ -90,10 +68,6 @@ def test_connection():
         print("\n❌ Database connection failed!\n")
         print(error)
 
-
-# ---------------------------------------------------------------------
-# Run Directly
-# ---------------------------------------------------------------------
 
 if __name__ == "__main__":
     test_connection()
