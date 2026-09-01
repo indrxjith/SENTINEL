@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import pandas as pd
 from sqlalchemy import text
+from sqlalchemy.exc import ProgrammingError
 
 from src.utils.database import engine
 
@@ -64,15 +65,20 @@ class BetaRepository:
             """
         )
 
-        with engine.begin() as connection:
+        try:
+            with engine.begin() as connection:
 
-            connection.execute(
-                query,
-                {
-                    "symbol": symbol,
-                    "benchmark": benchmark,
-                },
-            )
+                connection.execute(
+                    query,
+                    {
+                        "symbol": symbol,
+                        "benchmark": benchmark,
+                    },
+                )
+
+        except ProgrammingError:
+            # Table doesn't exist yet (fresh database) - nothing to delete
+            pass
 
     # ==========================================================
     # Fetch Symbol
