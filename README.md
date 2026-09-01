@@ -12,7 +12,7 @@ Built with Python, PostgreSQL, and SQLAlchemy
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-D71F00?logo=python&logoColor=white)](https://www.sqlalchemy.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-[Live Demo](https://sentinel-seidruryl3gjprqh9czv9y.streamlit.app/) · [Screenshots](#screenshots) · [Getting Started](#getting-started) · [Architecture](#architecture)
+[Live Demo](https://market-risk-sentinel.streamlit.app/) · [Getting Started](#getting-started) · [Architecture](#architecture)
 
 </div>
 
@@ -27,7 +27,6 @@ Investors and fund managers need to answer one question every day: **how much mo
 ## Table of Contents
 
 - [Features](#features)
-- [Screenshots](#screenshots)
 - [Tech Stack](#tech-stack)
 - [Architecture](#architecture)
 - [Risk Models](#risk-models)
@@ -45,16 +44,6 @@ Investors and fund managers need to answer one question every day: **how much mo
 - 🌐 **Regime detection** — classifies market conditions (calm / volatile / trending)
 - 🔗 **Correlation analytics** — cross-asset correlation matrix + rolling pairwise correlation
 - 🗄️ **Raw data explorer** — search, filter, and export directly from PostgreSQL
-
-## Screenshots
-
-<div align="center">
-
-| Risk Analytics | Overview |
-|---|---|
-| ![Risk Analytics](./assets/screenshots/risk-analytics.png) | *(add screenshot)* |
-
-</div>
 
 ## Tech Stack
 
