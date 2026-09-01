@@ -12,7 +12,7 @@ Built with Python, PostgreSQL, and SQLAlchemy
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-D71F00?logo=python&logoColor=white)](https://www.sqlalchemy.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-[Live Demo](#) · [Screenshots](#screenshots) · [Getting Started](#getting-started) · [Architecture](#architecture)
+[Live Demo](https://sentinel-seidruryl3gjprqh9czv9y.streamlit.app/) · [Screenshots](#screenshots) · [Getting Started](#getting-started) · [Architecture](#architecture)
 
 </div>
 
@@ -50,9 +50,9 @@ Investors and fund managers need to answer one question every day: **how much mo
 
 <div align="center">
 
-| Overview | Model Validation |
+| Risk Analytics | Overview |
 |---|---|
-| *(add screenshot)* | *(add screenshot)* |
+| ![Risk Analytics](./assets/screenshots/risk-analytics.png) | *(add screenshot)* |
 
 </div>
 
@@ -153,10 +153,10 @@ SENTINEL/
 ### Installation
 
 ```bash
-git clone https://github.com/<your-username>/SENTINEL.git
+git clone https://github.com/indrxjith/SENTINEL.git
 cd SENTINEL
 pip install -r requirements.txt
-cp .env.example .env   # add your PostgreSQL credentials
+cp .env.example .env   # then edit .env with your PostgreSQL credentials
 ```
 
 ### Run
